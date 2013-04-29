@@ -2,4 +2,8 @@
 *.jpg
 *.jpeg
 .idea/*
-libs/*
+libs/core.py[c]
+libs/exc.py[c]
+libs/logistic.py[c]
+libs/README.md
+
