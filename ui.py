@@ -3,6 +3,7 @@ import os
 
 import sys
 from PyQt4.QtGui import *
+from PyQt4.QtCore import *
 from libs.core import ClientCore
 import numpy as np
 
@@ -56,22 +57,25 @@ class ImageWidget(QWidget, object):
 
 
 
-class ImageBox16(QWidget):
-    def __init__(self, parent):
-        super(ImageBox16, self).__init__(parent)
+class ImageBox(QWidget):
+    def __init__(self, parent, row, col):
+        super(ImageBox, self).__init__(parent)
+        self.row = row
+        self.col = col
+
         self.initUI()
 
 
     def initUI(self):
-        self.box16 = QGridLayout()
+        self.box = QGridLayout()
         self.widgets = []
         self.labels = []
 
-        for i in range(0, 4):
-            for j in range(0,4):
+        for i in range(self.row):
+            for j in range(self.col):
                 box = QVBoxLayout()
 
-                label = QLabel('dist = ')
+                label = QLabel('%s dist = ' % (i * self.row + j))
                 box.addWidget(label)
 
                 tmp = ImageWidget(self)
@@ -80,17 +84,23 @@ class ImageBox16(QWidget):
                 self.widgets.append(tmp)
                 self.labels.append(label)
 
-                self.box16.addLayout(box, i, j, 1, 1)
+                self.box.addLayout(box, i, j, 1, 1)
 
-        self.setLayout(self.box16)
+        self.setLayout(self.box)
 
 
 
 class MainFrame(QDialog, object):
     def __init__(self):
         super(MainFrame, self).__init__()
-        self.initUI()
         self.last_dir_path = ''
+        self.image_box_row = 3
+        self.image_box_col = 3
+        self.max_result_count = self.image_box_row * self.image_box_col
+
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
+
+        self.initUI()
 
 
     def selectFile(self):
@@ -120,15 +130,15 @@ class MainFrame(QDialog, object):
         if not self.file_path.text():
             self.selectFile()
 
-        r = self.core.send_img_raw(self.buf_encrypted, max_count=16)
+        r = self.core.send_img_raw(self.buf_encrypted, max_count=self.max_result_count)
         cnt, distances = self.core.parse_result(r)
 
-        for i in range(16):
-            self.image_box.labels[i].setText('dist = ')
+        for i in range(self.max_result_count):
+            self.image_box.labels[i].setText('%s dist = ' % i)
             self.image_box.widgets[i].loadImageFromPath()
 
         for i in range(cnt):
-            self.image_box.labels[i].setText('dist = %s' % distances[i])
+            self.image_box.labels[i].setText('%s dist = %s' % (i, distances[i]))
             self.image_box.widgets[i].loadImageFromPath(os.path.join('results',
                                                                      'res%s.jpg' % i))
 
@@ -139,11 +149,7 @@ class MainFrame(QDialog, object):
 
         self.resultPath = 'results'
 
-        self.result_jpeg_paths =[]
-        for i in range(0, 16):
-            self.result_jpeg_paths.append(os.path.join(self.resultPath, str(i), '.jpg'))
-
-        self.image_box = ImageBox16(self)
+        self.image_box = ImageBox(self, self.image_box_row, self.image_box_col)
 
         def add_preview(widget_name):
             preview = ImageWidget(self)
