@@ -2,8 +2,10 @@
 import os
 
 import sys
-from PyQt4.QtGui import *
+import threading
 from PyQt4.QtCore import *
+from PyQt4.QtGui import *
+from requests import ConnectionError
 from libs.core import ClientCore
 import numpy as np
 
@@ -90,6 +92,11 @@ class ImageBox(QWidget):
 
 
 
+class LoginThread(QThread, object):
+    pass
+
+
+
 class MainFrame(QDialog, object):
     def __init__(self):
         super(MainFrame, self).__init__()
@@ -100,11 +107,48 @@ class MainFrame(QDialog, object):
 
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
 
+        key = np.float64(.7000000000000001), np.float64(3.6000000000000001), 1
+        self.core = ClientCore((key, key, key))
+
         self.initUI()
+
+        self.resultPath = 'results'
+
+        def _t():
+            try:
+                r = self.core.init_core()
+                if r['status'] == 'ok':
+                    self.unlockButtons()
+                else:
+                    self.showCriticalBox('Initializing', r['comment'])
+            except ConnectionError:
+                self.showCriticalBox('Initializing',
+                                     'Seems that there isn\'t any server running on %s' % self.core.server_addr)
+                pass
+
+        t = threading.Thread(target=_t)
+        t.start()
+
+
+    def showCriticalBox(self, title, text):
+        QMessageBox.warning(self, title, text, 'OK')
+
+
+    def lockButtons(self):
+        self.search_btn.setEnabled(False)
+        self.upload_btn.setEnabled(False)
+
+
+    def unlockButtons(self):
+        self.search_btn.setEnabled(True)
+        self.upload_btn.setEnabled(True)
 
 
     def selectFile(self):
         fn = QFileDialog.getOpenFileName(self, 'Open file', self.last_dir_path, 'JPEG files (*.jpg)')
+
+        if not fn:
+            return
 
         self.last_dir_path = os.path.dirname(str(fn))
 
@@ -119,11 +163,11 @@ class MainFrame(QDialog, object):
         if not self.file_path.text():
             self.selectFile()
         r = self.core.upload_img_raw(self.buf_encrypted)
-        msg = r.json()['status']
+        msg = r['status']
         if msg == 'ok':
             QMessageBox.information(self, 'Upload', 'File uploaded.', 'OK')
         else:
-            QMessageBox.warning(self, 'Upload', msg, 'OK')
+            QMessageBox.warning(self, 'Upload', r['comment'], 'OK')
 
 
     def retrieveSimilarFile(self):
@@ -131,24 +175,24 @@ class MainFrame(QDialog, object):
             self.selectFile()
 
         r = self.core.send_img_raw(self.buf_encrypted, max_count=self.max_result_count)
-        cnt, distances = self.core.parse_result(r)
 
-        for i in range(self.max_result_count):
+        results = []
+        n = min(r, self.max_result_count)
+        for i in range(n):
+            results.append(self.core.parse_result(i))
+
+        # results.sort(key=lambda (_, n): n)
+
+        for i in range(n):
             self.image_box.labels[i].setText('%s dist = ' % i)
             self.image_box.widgets[i].loadImageFromPath()
 
-        for i in range(cnt):
-            self.image_box.labels[i].setText('%s dist = %s' % (i, distances[i]))
-            self.image_box.widgets[i].loadImageFromPath(os.path.join('results',
-                                                                     'res%s.jpg' % i))
+        for i, (data, dist) in enumerate(results):
+            self.image_box.labels[i].setText('%s dist = %s' % (i, dist))
+            self.image_box.widgets[i].loadImageFromPath(self.core.write_result(data, i))
 
 
     def initUI(self):
-        key = np.float64(.7000000000000001), np.float64(3.6000000000000001), 1
-        self.core = ClientCore((key, key, key))
-
-        self.resultPath = 'results'
-
         self.image_box = ImageBox(self, self.image_box_row, self.image_box_col)
 
         def add_preview(widget_name):
@@ -168,7 +212,8 @@ class MainFrame(QDialog, object):
 
         def add_button(widget_name, caption, trigger):
             button = QPushButton(caption, self)
-            button.clicked.connect(trigger)
+            self.connect(button, SIGNAL('clicked()'), trigger)
+            # button.clicked.connect(trigger)
             self.__setattr__(widget_name, button)
             return button
 
@@ -177,6 +222,7 @@ class MainFrame(QDialog, object):
         button_box.addStretch()
         button_box.addWidget(add_button('search_btn', 'Search', self.retrieveSimilarFile))
         button_box.addWidget(add_button('upload_btn', 'Upload', self.uploadFile))
+        self.lockButtons()
 
         right_box = QVBoxLayout()
         right_box.addLayout(preview_box)
@@ -193,6 +239,10 @@ class MainFrame(QDialog, object):
 
         self.show()
 
+
+    def closeEvent(self, event):
+        t = threading.Thread(target=lambda: self.core.finalize_core())
+        t.start()
 
 
 
