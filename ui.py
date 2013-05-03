@@ -59,7 +59,7 @@ class ImageWidget(QWidget, object):
 
 
 
-class ImageBox(QWidget):
+class ImageBox(QWidget, object):
     def __init__(self, parent, row, col):
         super(ImageBox, self).__init__(parent)
         self.row = row
@@ -114,17 +114,24 @@ class MainFrame(QDialog, object):
 
         self.resultPath = 'results'
 
+        self.connect(self, SIGNAL('showCriticalBox(QString, QString)'), self.showCriticalBox)
+        self.connect(self, SIGNAL('unlock_buttons()'), self.unlockButtons)
+
         def _t():
             try:
                 r = self.core.init_core()
                 if r['status'] == 'ok':
-                    self.unlockButtons()
+                    self.emit(SIGNAL('unlock_buttons()'))
+                    # self.unlockButtons()
                 else:
-                    self.showCriticalBox('Initializing', r['comment'])
+                    self.emit(SIGNAL('showCriticalBox(QString, QString)'),
+                              QString('Initializing'),
+                              QString(r['comment']))
+                    # self.showCriticalBox('Initializing', r['comment'])
             except ConnectionError:
-                self.showCriticalBox('Initializing',
-                                     'Seems that there isn\'t any server running on %s' % self.core.server_addr)
-                pass
+                self.emit(SIGNAL('showCriticalBox(QString, QString)'),
+                          QString('Initializing'),
+                          QString('Seems that there isn\'t any server running on %s' % self.core.server_addr))
 
         t = threading.Thread(target=_t)
         t.start()
