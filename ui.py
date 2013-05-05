@@ -11,6 +11,9 @@ import numpy as np
 
 
 # show image
+from libs.ui_comp import ResultListItemDelegate, ResultSortProxy
+
+
 class ImageWidget(QWidget, object):
     def __init__(self, parent, (min_h, min_w)=(180, 240)):
         super(ImageWidget, self).__init__(parent)
@@ -200,7 +203,10 @@ class MainFrame(QDialog, object):
 
 
     def initUI(self):
-        self.image_box = ImageBox(self, self.image_box_row, self.image_box_col)
+        # self.image_box = ImageBox(self, self.image_box_row, self.image_box_col)
+        self.image_list_view = QListView()
+        self.image_list_view.setItemDelegate(ResultListItemDelegate())
+        proxy = ResultSortProxy()
 
         def add_preview(widget_name):
             preview = ImageWidget(self)
