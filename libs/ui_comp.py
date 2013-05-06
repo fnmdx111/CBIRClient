@@ -47,10 +47,22 @@ class ResultListItemDelegate(QStyledItemDelegate, object):
 
 class ResultSortProxy(QSortFilterProxyModel, object):
     def lessThan(self, left_index, right_index):
-        left_var = left_index.data(Qt.DisplayRole).toFloat()
-        right_var = right_index.data(Qt.DisplayRole).toFloat()
+        left_var = left_index.data(Qt.DisplayRole).toPyObject()
+        right_var = right_index.data(Qt.DisplayRole).toPyObject()
 
         return left_var < right_var
+
+
+
+class Counter(object):
+    def __init__(self):
+        self.cnt = 0
+
+    def inc(self):
+        self.cnt += 1
+
+    def __lt__(self, other):
+        return self.cnt < other
 
 
 
@@ -60,8 +72,8 @@ class ResultListModel(QAbstractListModel, object):
         self._data = data if data else []
 
 
-    def append(self, d):
-        self._data.append(d)
+    def append(self, fn, dist):
+        self._data.append((fn, dist))
 
 
     def rowCount(self, parent=QModelIndex(), *args, **kwargs):
