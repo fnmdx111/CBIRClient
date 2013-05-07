@@ -7,6 +7,5 @@ PyQt frontend for ClientCore
 TODO
 ----
 
-* post requests in thread
-
+None for now
 

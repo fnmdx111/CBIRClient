@@ -1,67 +1,41 @@
 ﻿# encoding: utf-8
+from collections import deque
+from logging import Formatter
 import os
 
 import sys
 import threading
+import timeit
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from requests import ConnectionError
 from libs.core import ClientCore
 import numpy as np
-from libs.ui_comp import ResultListItemDelegate, ResultSortProxy, ResultListModel, Counter
-
-
-class ImageWidget(QWidget, object):
-    def __init__(self, parent, (min_h, min_w)=(180, 240)):
-        super(ImageWidget, self).__init__(parent)
-        self.initUI(min_h, min_w)
-
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.drawPixmap(0, 0, self.picture)
-
-
-    def initUI(self, min_h, min_w):
-        self.min_height = min_h
-        self.min_width = min_w
-        self.setMinimumHeight(min_h)
-        self.setMinimumWidth(min_w)
-
-        self.picture = self.gen_null_pixmap()
-        self.update()
-
-
-    def gen_null_pixmap(self):
-        pixmap = QPixmap(self.min_width, self.min_height)
-        pixmap.fill(QColor('green'))
-
-        return pixmap
-
-
-    def loadImageFromPath(self, path=None):
-        self.picture = QPixmap(path)
-        self.picture = self.picture.scaled(self.min_width, self.min_height)
-
-        if self.picture.isNull():
-            self.picture = self.gen_null_pixmap()
-        self.update()
-
-
-    def loadImageFromBuffer(self, buf):
-        self.picture = QPixmap()
-        self.picture.loadFromData(buf)
-        self.picture = self.picture.scaled(self.min_width ,self.min_height)
-
-        if self.picture.isNull():
-            self.picture = self.gen_null_pixmap()
-        self.update()
-
+from libs.ui_comp import ResultListItemDelegate, ResultListModel, Counter, ImageWidget, LoggerHandler
 
 
 class SecureRetrievalUI(QDialog, object):
     def __init__(self):
         super(SecureRetrievalUI, self).__init__()
+
+        self.setup_misc()
+
+        self.setup_layout()
+        self.setup_log_dialog()
+        self.connect(self, SIGNAL('results_prepared'), self._results_prepared)
+        self.connect(self, SIGNAL('showCriticalBox'), self.show_critical_box)
+        self.connect(self, SIGNAL('unlock_buttons()'), self.unlock_buttons)
+
+        self.resize(0, 550)
+        self.setMaximumWidth(508)
+
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinimizeButtonHint)
+        self.setWindowTitle(u'Secure Image Retrieval Client (powered by 武汉大学对不队)')
+
+        self.asynchronous_login()
+
+
+    def setup_misc(self):
         self.last_dir_path = ''
         self.result_path = 'results'
 
@@ -73,14 +47,40 @@ class SecureRetrievalUI(QDialog, object):
         key = np.float64(.7000000000000001), np.float64(3.6000000000000001), 1
         self.core = ClientCore((key, key, key))
 
-        self.image_list_view = QListView()
 
-        self.image_list_view.setItemDelegate(ResultListItemDelegate())
+    def setup_log_dialog(self):
+        self.log_widget = QTextBrowser()
 
+        handler = LoggerHandler(self.log_widget)
+        handler.setFormatter(Formatter(
+            fmt='<font color=blue>%(asctime)s</font> '
+                '<font color=red><b>%(levelname) 8s</b></font> %(message)s',
+            datefmt='%m/%dT%H:%M:%S'
+        ))
+        self.core.logger.addHandler(handler)
+
+        self.connect(self.log_widget, SIGNAL('newLog(QString)'), self.new_log)
+
+        dialog = QDialog(self)
+
+        dialog.setWindowTitle(u'Log')
+        dialog.resize(400, 200)
+
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(self.log_widget)
+        dialog.setLayout(layout)
+
+        dialog.show()
+
+
+    def setup_layout(self):
         self.model = ResultListModel()
-        self.sort_proxy = ResultSortProxy()
-        self.sort_proxy.setSourceModel(self.model)
-        self.image_list_view.setModel(self.sort_proxy)
+
+        image_list_view = QListView()
+        image_list_view.setModel(self.model)
+        image_list_view.setItemDelegate(ResultListItemDelegate())
+
+        self.file_path = QLineEdit(self)
 
         def add_preview(widget_name):
             preview = ImageWidget(self)
@@ -88,21 +88,22 @@ class SecureRetrievalUI(QDialog, object):
                 self.__setattr__(widget_name, preview)
             return preview
 
-        self.file_path = QLineEdit(self)
-
         def add_button(widget_name, caption, trigger):
             button = QPushButton(caption, self)
             self.connect(button, SIGNAL('clicked()'), trigger)
             self.__setattr__(widget_name, button)
             return button
 
+        self.status_label = QLabel()
+
         button_box = QHBoxLayout()
-        button_box.addWidget(add_button('select_btn', 'Select File', self.selectFile))
+        button_box.addWidget(add_button('select_btn', 'Select File', self.select_image))
         button_box.addStretch()
-        button_box.addWidget(add_button('reconnect_btn', 'Reconnect', self.reconnect))
-        button_box.addWidget(add_button('search_btn', 'Search', self.retrieveSimilarFile))
-        button_box.addWidget(add_button('upload_btn', 'Upload', self.uploadFile))
-        self.lockButtons()
+        button_box.addWidget(self.status_label)
+        button_box.addWidget(add_button('reconnect_btn', 'Reconnect', self.asynchronous_login))
+        button_box.addWidget(add_button('retrieve_btn', 'Retrieve', self.retrieve_image))
+        button_box.addWidget(add_button('upload_btn', 'Upload', self.upload_image))
+        self.lock_buttons()
 
         grid_layout = QGridLayout()
         grid_layout.addWidget(QLabel('Original image:'), 0, 0)
@@ -111,28 +112,13 @@ class SecureRetrievalUI(QDialog, object):
         grid_layout.addWidget(add_preview('encrypt_preview'), 1, 1, 1, 1, Qt.AlignCenter)
         grid_layout.addWidget(self.file_path, 2, 0, 1, 2)
         grid_layout.addLayout(button_box, 3, 0, 1, 2)
-        grid_layout.addWidget(self.image_list_view, 4, 0, 1, 2)
+        grid_layout.addWidget(image_list_view, 4, 0, 1, 2)
 
         self.setLayout(grid_layout)
 
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
 
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinimizeButtonHint)
-        self.setWindowTitle(u'Secure Image Retrieval Client (powered by 武汉大学对不队)')
-
-        self.connect(self, SIGNAL('results_prepared'), self._results_prepared)
-        self.connect(self, SIGNAL('showCriticalBox(QString, QString)'),
-                     lambda title, text: self.showMessageBox(QMessageBox.critical,
-                                                             title,
-                                                             text))
-        self.connect(self, SIGNAL('showWarningBox(QString, QString)'), self.showMessageBox)
-        self.connect(self, SIGNAL('unlock_buttons()'), self.unlockButtons)
-
-        self.asynchronous_login()
-
-
-    def reconnect(self):
-        self.asynchronous_login()
+    def new_log(self, log):
+        self.log_widget.append(log)
 
 
     def asynchronous_login(self):
@@ -143,14 +129,18 @@ class SecureRetrievalUI(QDialog, object):
             try:
                 r = self.core.init_core()
                 if r['status'] == 'ok':
+                    self.core.logger.info('connected to server at %s, have fun',
+                                          self.core.server_addr)
                     self.emit(SIGNAL('unlock_buttons()'))
                     self.logged_in = True
                 else:
-                    self.emit(SIGNAL('showCriticalBox(QString, QString)'),
+                    self.emit(SIGNAL('showCriticalBox'),
                               QString('Initializing'),
                               QString(r['comment']))
             except ConnectionError:
-                self.emit(SIGNAL('showCriticalBox(QString, QString)'),
+                self.core.logger.critical('cannot connect to server at %s',
+                                          self.core.server_addr)
+                self.emit(SIGNAL('showCriticalBox'),
                           QString('Initializing'),
                           QString('Seems that there isn\'t any server running on %1.')
                           .arg(self.core.server_addr))
@@ -159,23 +149,27 @@ class SecureRetrievalUI(QDialog, object):
         t.start()
 
 
-    def showMessageBox(self, box_type, title, text):
+    def show_critical_box(self, title, text):
+        self.show_message_box(QMessageBox.critical, title, text)
+
+
+    def show_message_box(self, box_type, title, text):
         box_type(self, title, text, 'OK')
 
 
-    def lockButtons(self):
-        self.search_btn.setEnabled(False)
+    def lock_buttons(self):
+        self.retrieve_btn.setEnabled(False)
         self.upload_btn.setEnabled(False)
         self.reconnect_btn.setEnabled(True)
 
 
-    def unlockButtons(self):
-        self.search_btn.setEnabled(True)
+    def unlock_buttons(self):
+        self.retrieve_btn.setEnabled(True)
         self.upload_btn.setEnabled(True)
         self.reconnect_btn.setEnabled(False)
 
 
-    def selectFile(self):
+    def select_image(self):
         fn = QFileDialog.getOpenFileName(self, 'Open file', self.last_dir_path, 'JPEG files (*.jpg)')
 
         if not fn:
@@ -190,27 +184,35 @@ class SecureRetrievalUI(QDialog, object):
         self.encrypt_preview.loadImageFromBuffer(self.buf_encrypted)
 
 
-    def uploadFile(self):
+    def upload_image(self):
         if not self.file_path.text():
-            self.selectFile()
-        r = self.core.upload_img_raw(self.buf_encrypted)
-        msg = r['status']
-        if msg == 'ok':
-            self.showMessageBox(QMessageBox.information, 'Upload', 'File uploaded.')
-        else:
-            self.showMessageBox(QMessageBox.critical, 'Upload', r['comment'])
+            self.select_image()
+        try:
+            r = self.core.upload_img_raw(self.buf_encrypted)
+            msg = r['status']
+            if msg == 'ok':
+                self.core.logger.info('file uploaded')
+            else:
+                self.show_message_box(QMessageBox.critical, 'Upload', r['comment'])
+                self.core.logger.critical('file not uploaded due to error')
+        except ConnectionError:
+            self.show_message_box(QMessageBox.critical, 'Upload', 'Server is unavailable.')
+            self.core.logger.critical('server %s is unavailable', self.core.server_addr)
+        finally:
+            self.file_path.setText('')
 
 
-    def retrieveSimilarFile(self):
+    def retrieve_image(self):
         if self.retrieve_block:
-            self.showMessageBox(QMessageBox.warning,
+            self.show_message_box(QMessageBox.warning,
                                 'Retrieve',
                                 'Please wait for this request to be finished.')
             return
 
         if not self.file_path.text():
-            self.selectFile()
+            self.select_image()
 
+        self.status_label.setText('')
         count = len(self.model._data)
         self.model.beginRemoveRows(QModelIndex(), 0, count - 1)
         while self.model._data:
@@ -218,38 +220,82 @@ class SecureRetrievalUI(QDialog, object):
         self.model.endRemoveRows()
 
         def _t():
-            self.retrieve_block = True
-            r = self.core.send_img_raw(self.buf_encrypted, max_count=self.max_result_count)
-            self.emit(SIGNAL('results_prepared'), r)
+            try:
+                self.retrieve_block = True
+                r = self.core.send_img_raw(self.buf_encrypted, max_count=self.max_result_count)
+                self.emit(SIGNAL('results_prepared'), r)
+            except ConnectionError:
+                self.emit(SIGNAL('showCriticalBox'),
+                          QString('Retrieve'),
+                          QString('Server is unavailable.'))
+                self.retrieve_block = False
+                self.core.logger.info('server %s is unavailable', self.core.server_addr)
+
         prepare_result_thread = threading.Thread(target=_t)
         prepare_result_thread.start()
 
+        self.file_path.setText('')
+
 
     def _results_prepared(self, r):
-        n = min(r, self.max_result_count)
+        n = min(r['result'], self.max_result_count)
+        self.status_label.setText('<font color="blue"><b>'
+                                  'fetching...'
+                                  '</b></font>')
+        self.core.logger.info('results are prepared at server in %s sec, '
+                              'waiting for fetching',
+                              r['time_elapsed'])
         lock = threading.Lock()
 
+        result_queue = deque()
+
         def _t(i, counter):
-            data, dist = self.core.parse_result(None)
-            fn = self.core.write_result(data, i)
-
-            self.model.beginInsertRows(QModelIndex(), 0, 0)
-            self.model.append(fn, dist)
-            self.model.endInsertRows()
-
-            with lock:
-                counter.inc()
+            try:
+                data, dist = self.core.parse_result(None)
+                self.core.logger.info('got result %s, dist = %s', i, dist)
+                if isinstance(dist, basestring):
+                    return
+                else:
+                    result_queue.append((data, dist, i))
+            finally:
+                with lock:
+                    counter.inc()
 
         counter = Counter()
+
+        start = timeit.default_timer()
         for i in range(n):
             threading.Thread(target=_t, args=(i, counter)).start()
 
         def _watcher():
-            while counter < n:
-                pass
-            # self.sort_proxy.sort(0)
-            self.model._data.sort(key=lambda (_, dist): dist)
+            while True:
+                if len(result_queue) > 0:
+                    data, dist, i = result_queue.pop()
+
+                    dec_img = self.core.dec_img(
+                        array=self.core._from_raw_to_grayscale(data)
+                    )
+
+                    buf = self.core.save_img_m(dec_img)
+                    fn = self.core.write_result(dec_img, i)
+
+                    self.model.beginInsertRows(QModelIndex(), 0, 0)
+                    self.model.append(buf, dist, fn)
+                    self.core.logger.info('appending thumbnail %s into list',
+                                          i)
+                    self.model.endInsertRows()
+                if counter >= n and len(result_queue) < 1:
+                    break
+
+            self.model.sort()
+            self.core.logger.info('results sorted by distance')
             self.retrieve_block = False
+
+            self.core.logger.info('image retrieval done within %s',
+                                  timeit.default_timer() - start)
+            self.status_label.setText('<font color="green"><b>'
+                                      '%s'
+                                      '</b></font>' % 'done')
         threading.Thread(target=_watcher).start()
 
 
