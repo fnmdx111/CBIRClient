@@ -242,7 +242,7 @@ class SecureRetrievalUI(QDialog, object):
         self.status_label.setText('<font color="blue"><b>'
                                   'fetching...'
                                   '</b></font>')
-        self.core.logger.info('results are prepared at server in %s sec, '
+        self.core.logger.info('results are prepared at server within %s sec, '
                               'waiting for fetching',
                               r['time_elapsed'])
         lock = threading.Lock()
@@ -291,8 +291,8 @@ class SecureRetrievalUI(QDialog, object):
             self.core.logger.info('results sorted by distance')
             self.retrieve_block = False
 
-            self.core.logger.info('image retrieval done within %s',
-                                  timeit.default_timer() - start)
+            self.core.logger.info('image retrieval is done within %s sec',
+                                  '%2.5f' % (timeit.default_timer() - start))
             self.status_label.setText('<font color="green"><b>'
                                       '%s'
                                       '</b></font>' % 'done')
