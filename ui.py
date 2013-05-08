@@ -65,13 +65,20 @@ class SecureRetrievalUI(QDialog, object):
 
         dialog.setWindowTitle(u'Log')
         dialog.resize(400, 200)
+        dialog.move(400, 200)
 
         layout = QVBoxLayout(dialog)
         layout.addWidget(self.log_widget)
         dialog.setLayout(layout)
 
-        dialog.show()
+        self.dialog = dialog
 
+
+    def show_log_dialog(self):
+        if self.dialog.isVisible():
+            self.dialog.hide()
+        else:
+            self.dialog.show()
 
     def setup_layout(self):
         self.model = ResultListModel()
@@ -101,6 +108,7 @@ class SecureRetrievalUI(QDialog, object):
         button_box.addStretch()
         button_box.addWidget(self.status_label)
         button_box.addWidget(add_button('reconnect_btn', 'Reconnect', self.asynchronous_login))
+        button_box.addWidget(add_button('show_log_btn', 'Show Log', self.show_log_dialog))
         button_box.addWidget(add_button('retrieve_btn', 'Retrieve', self.retrieve_image))
         button_box.addWidget(add_button('upload_btn', 'Upload', self.upload_image))
         self.lock_buttons()
@@ -211,6 +219,8 @@ class SecureRetrievalUI(QDialog, object):
 
         if not self.file_path.text():
             self.select_image()
+        if not self.file_path.text():
+            return
 
         self.status_label.setText('')
         count = len(self.model._data)
