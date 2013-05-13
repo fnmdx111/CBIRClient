@@ -11,7 +11,10 @@ from PyQt4.QtGui import *
 from requests import ConnectionError
 from libs.core import ClientCore
 import numpy as np
-from libs.ui_comp import ResultListItemDelegate, ResultListModel, Counter, ImageWidget, LoggerHandler
+from libs.ui_comp import ResultListItemDelegate,\
+                         ResultListModel,\
+                         Counter, ImageWidget, LoggerHandler,\
+                         ColoredFormatter
 
 
 class SecureRetrievalUI(QDialog, object):
@@ -52,9 +55,11 @@ class SecureRetrievalUI(QDialog, object):
         self.log_widget = QTextBrowser()
 
         handler = LoggerHandler(self.log_widget)
-        handler.setFormatter(Formatter(
-            fmt='<font color=blue>%(asctime)s</font> '
-                '<font color=red><b>%(levelname) 8s</b></font> %(message)s',
+        handler.setFormatter(ColoredFormatter(
+            fmt='%(asctime)s %(levelname)s %(message)s',
+            colors={'asctime': lambda _: 'blue',
+                    'levelname': lambda lvl:
+                            ColoredFormatter.gen_colorscheme()[lvl]},
             datefmt='%m/%dT%H:%M:%S'
         ))
         self.core.logger.addHandler(handler)
