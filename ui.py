@@ -1,6 +1,5 @@
 ﻿# encoding: utf-8
 from collections import deque
-from logging import Formatter
 import os
 
 import sys
@@ -201,7 +200,7 @@ class SecureRetrievalUI(QDialog, object):
         if not self.file_path.text():
             self.select_image()
         try:
-            r = self.core.upload_img_raw(self.buf_encrypted)
+            r = self.core.upload_img(self.buf_encrypted)
             msg = r['status']
             if msg == 'ok':
                 self.core.logger.info('file uploaded')
@@ -237,7 +236,7 @@ class SecureRetrievalUI(QDialog, object):
         def _t():
             try:
                 self.retrieve_block = True
-                r = self.core.send_img_raw(self.buf_encrypted, max_count=self.max_result_count)
+                r = self.core.send_img(self.buf_encrypted, max_count=self.max_result_count)
                 self.emit(SIGNAL('results_prepared'), r)
             except ConnectionError:
                 self.emit(SIGNAL('showCriticalBox'),
