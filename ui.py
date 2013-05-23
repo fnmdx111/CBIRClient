@@ -75,14 +75,23 @@ class SecureRetrievalUI(QDialog, object):
         layout.addWidget(self.log_widget)
         dialog.setLayout(layout)
 
-        self.dialog = dialog
+        self.log_dialog = dialog
 
 
     def show_log_dialog(self):
-        if self.dialog.isVisible():
-            self.dialog.hide()
+        if self.log_dialog.isVisible():
+            self.log_dialog.hide()
         else:
-            self.dialog.show()
+            self.log_dialog.show()
+
+
+    def setup_settings_dialog(self):
+        pass
+
+
+    def show_settings_dialog(self):
+        pass
+
 
     def setup_layout(self):
         self.model = ResultListModel()
@@ -112,7 +121,7 @@ class SecureRetrievalUI(QDialog, object):
         button_box.addStretch()
         button_box.addWidget(self.status_label)
         button_box.addWidget(add_button('reconnect_btn', 'Reconnect', self.asynchronous_login))
-        button_box.addWidget(add_button('show_log_btn', 'Show Log', self.show_log_dialog))
+        button_box.addWidget(add_button('settings_btn', 'Settings', self.show_settings_dialog))
         button_box.addWidget(add_button('retrieve_btn', 'Retrieve', self.retrieve_image))
         button_box.addWidget(add_button('upload_btn', 'Upload', self.upload_image))
         self.lock_buttons()
