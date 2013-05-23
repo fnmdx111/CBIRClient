@@ -17,13 +17,17 @@ from libs.ui_comp import ResultListItemDelegate,\
 
 
 class SecureRetrievalUI(QDialog, object):
+    DEFAULT_X0_VALUE = np.float64(0.7000000000000001)
+    DEFAULT_R_VALUE = np.float64(3.6000000000000001)
+    DEFAULT_S_VALUE = 255
     def __init__(self):
         super(SecureRetrievalUI, self).__init__()
 
         self.setup_misc()
-
         self.setup_layout()
+        self.setup_settings_dialog()
         self.setup_log_dialog()
+
         self.connect(self, SIGNAL('results_prepared'), self._results_prepared)
         self.connect(self, SIGNAL('showCriticalBox'), self.show_critical_box)
         self.connect(self, SIGNAL('unlock_buttons()'), self.unlock_buttons)
@@ -46,8 +50,11 @@ class SecureRetrievalUI(QDialog, object):
 
         self.max_result_count = 10
 
-        key = np.float64(.7000000000000001), np.float64(3.6000000000000001), 1
-        self.core = ClientCore((key, key, key))
+        # self.settings_done()
+        key_group = (self.DEFAULT_X0_VALUE,
+                     self.DEFAULT_R_VALUE,
+                     self.DEFAULT_S_VALUE)
+        self.core = ClientCore((key_group, key_group, key_group))
 
 
     def setup_log_dialog(self):
@@ -85,12 +92,121 @@ class SecureRetrievalUI(QDialog, object):
             self.log_dialog.show()
 
 
+    def settings_done(self):
+        def get_key_group(key_group_widget):
+            return (np.float64(str(key_group_widget[0].text())),
+                    np.float64(str(key_group_widget[1].text())),
+                    int(str(key_group_widget[2].text())))
+        keys = map(get_key_group, [self.settings_dialog.key_group_1,
+                                   self.settings_dialog.key_group_2,
+                                   self.settings_dialog.key_group_3])
+        server_addr = str(self.settings_dialog.ip_addr_le.text())
+
+        if self.core.server_addr != server_addr:
+            if self.logged_in:
+                self.core.finalize_core()
+                self.lock_buttons()
+                self.logged_in = False
+
+            self.core = ClientCore(keys, server_addr=server_addr)
+            self.asynchronous_login()
+
+        self.core.set_keys(keys)
+
+        self.settings_dialog.hide()
+
+
     def setup_settings_dialog(self):
-        pass
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Settings')
+        dialog.ip_addr_le = QLineEdit('http://127.0.0.1:5000')
+
+        def gen_float64_widget(top, bottom, default_value):
+            validator = QDoubleValidator(self)
+            validator.setNotation(QDoubleValidator.StandardNotation)
+            validator.setRange(top, bottom)
+            validator.setDecimals(16)
+
+            line_edit = QLineEdit('%1.16f' % default_value)
+            line_edit.setValidator(validator)
+
+            return line_edit
+
+        def gen_x0_widget():
+            return gen_float64_widget(-1, 1, self.DEFAULT_X0_VALUE)
+
+        def gen_r_widget():
+            return gen_float64_widget(3.57, 4, self.DEFAULT_R_VALUE)
+
+        def gen_s_widget():
+            validator = QIntValidator(self)
+            validator.setBottom(0)
+
+            line_edit = QLineEdit(str(self.DEFAULT_S_VALUE))
+            line_edit.setMaximumWidth(40)
+            line_edit.setValidator(validator)
+
+            return line_edit
+
+        dialog.key_group_1 = [gen_x0_widget(),
+                              gen_r_widget(),
+                              gen_s_widget()]
+        dialog.key_group_2 = [gen_x0_widget(),
+                              gen_r_widget(),
+                              gen_s_widget()]
+        dialog.key_group_3 = [gen_x0_widget(),
+                              gen_r_widget(),
+                              gen_s_widget()]
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok
+                                      | QDialogButtonBox.Cancel)
+        self.connect(button_box, SIGNAL('accepted()'), self.settings_done)
+        self.connect(button_box, SIGNAL('rejected()'), lambda: dialog.hide())
+
+        show_log_button = QPushButton('Show Log')
+        self.connect(show_log_button, SIGNAL('clicked()'), self.show_log_dialog)
+
+        g_layout = QGridLayout()
+        label = QLabel('Server address')
+        label.setBuddy(dialog.ip_addr_le)
+        g_layout.addWidget(label, 0, 0, 1, 1)
+        g_layout.addWidget(dialog.ip_addr_le, 0, 1, 1, 1)
+
+        def add_key_group(g_layout, row, x0, r, s):
+            label = QLabel('x<sub>0</sub>')
+            label.setBuddy(x0)
+            g_layout.addWidget(label, row, 0)
+            g_layout.addWidget(x0, row, 1)
+            label = QLabel('r')
+            label.setBuddy(r)
+            g_layout.addWidget(label, row, 2)
+            g_layout.addWidget(r, row, 3)
+            label = QLabel('s')
+            label.setBuddy(s)
+            g_layout.addWidget(label, row, 4)
+            g_layout.addWidget(s, row, 5)
+
+        _l = QGridLayout()
+        add_key_group(_l, 0, *dialog.key_group_1)
+        add_key_group(_l, 1, *dialog.key_group_2)
+        add_key_group(_l, 2, *dialog.key_group_3)
+
+        g_layout.addLayout(_l, 1, 0, 1, 2)
+        g_layout.addWidget(show_log_button, 4, 0)
+        g_layout.addWidget(button_box, 4, 1)
+
+        dialog.setLayout(g_layout)
+
+        dialog.setMaximumSize(dialog.sizeHint())
+
+        self.settings_dialog = dialog
 
 
     def show_settings_dialog(self):
-        pass
+        if not self.settings_dialog.isVisible():
+            self.settings_dialog.show()
+        else:
+            self.settings_dialog.hide()
 
 
     def setup_layout(self):
