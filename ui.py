@@ -31,6 +31,7 @@ class SecureRetrievalUI(QDialog, object):
         self.connect(self, SIGNAL('results_prepared'), self._results_prepared)
         self.connect(self, SIGNAL('showCriticalBox'), self.show_critical_box)
         self.connect(self, SIGNAL('unlock_buttons()'), self.unlock_buttons)
+        self.connect(self, SIGNAL('fetch_done'), self.fetch_done)
 
         self.resize(0, 550)
         self.setMaximumWidth(508)
@@ -306,11 +307,12 @@ class SecureRetrievalUI(QDialog, object):
         self.reconnect_btn.setEnabled(False)
 
 
-    def select_image(self):
-        fn = QFileDialog.getOpenFileName(self, 'Open file', self.last_dir_path, 'JPEG files (*.jpg)')
-
+    def select_image(self, fn=''):
         if not fn:
-            return
+            fn = QFileDialog.getOpenFileName(self, 'Open file', self.last_dir_path, 'JPEG files (*.jpg)')
+
+            if not fn:
+                return
 
         self.last_dir_path = os.path.dirname(str(fn))
 
@@ -339,7 +341,7 @@ class SecureRetrievalUI(QDialog, object):
             self.file_path.setText('')
 
 
-    def retrieve_image(self):
+    def retrieve_image(self, folder='results'):
         if self.retrieve_block:
             self.show_message_box(QMessageBox.warning,
                                 'Retrieve',
@@ -362,7 +364,7 @@ class SecureRetrievalUI(QDialog, object):
             try:
                 self.retrieve_block = True
                 r = self.core.send_img(self.buf_encrypted, max_count=self.max_result_count)
-                self.emit(SIGNAL('results_prepared'), r)
+                self.emit(SIGNAL('results_prepared'), r, folder)
             except ConnectionError:
                 self.emit(SIGNAL('showCriticalBox'),
                           QString('Retrieve'),
@@ -376,7 +378,7 @@ class SecureRetrievalUI(QDialog, object):
         self.file_path.setText('')
 
 
-    def _results_prepared(self, r):
+    def _results_prepared(self, r, folder='results'):
         n = min(r['result'], self.max_result_count)
         self.status_label.setText('<font color="blue"><b>'
                                   'fetching...'
@@ -416,7 +418,7 @@ class SecureRetrievalUI(QDialog, object):
                     )
 
                     buf = self.core.save_img_m(dec_img)
-                    fn = self.core.write_result(dec_img, i)
+                    fn = self.core.write_result(dec_img, i, folder=folder)
 
                     self.model.beginInsertRows(QModelIndex(), 0, 0)
                     self.model.append(buf, dist, fn)
@@ -432,10 +434,14 @@ class SecureRetrievalUI(QDialog, object):
 
             self.core.logger.info('image retrieval is done within %s sec',
                                   '%2.5f' % (timeit.default_timer() - start))
-            self.status_label.setText('<font color="green"><b>'
-                                      '%s'
-                                      '</b></font>' % 'done')
+            self.emit(SIGNAL('fetch_done'))
         threading.Thread(target=_watcher).start()
+
+
+    def fetch_done(self):
+        self.status_label.setText('<font color="green"><b>'
+                                  '%s'
+                                  '</b></font>' % 'done')
 
 
     def closeEvent(self, event):
